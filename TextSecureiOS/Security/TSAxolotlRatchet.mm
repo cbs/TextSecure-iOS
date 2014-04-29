@@ -38,17 +38,22 @@
 @implementation TSAxolotlRatchet
 
 
-
 #pragma mark Public methods
 
 // Method for incoming messages
 + (TSMessage*)decryptWhisperMessage:(TSWhisperMessage*)message withSession:(TSSession *)session{
     if ([message isKindOfClass:[TSPreKeyWhisperMessage class]]) {
+        
         TSPreKeyWhisperMessage *preKeyWhisperMessage = (TSPreKeyWhisperMessage*)message;
-        session = [self initializeSessionAsBob:session withPreKeyWhisperMessage:preKeyWhisperMessage];
-        if (!session) {
-            throw [NSException exceptionWithName:@"NoSessionFoundForDecryption" reason:@"" userInfo:@{}];
+        
+        if (session.contact.identityKey && ![session.contact.identityKey isEqualToData:preKeyWhisperMessage.identityKey]) {
+            throw [NSException exceptionWithName:@"MITM" reason:@"Attempt to initialize a new session with new Identity Key" userInfo:nil];
+        } 
+        
+        if (![session isInitialized]) {
+            session = [self initializeSessionAsBob:session withPreKeyWhisperMessage:preKeyWhisperMessage];
         }
+        
         return [self decryptMessage:[[TSEncryptedWhisperMessage alloc] initWithTextSecureProtocolData:preKeyWhisperMessage.message]
                         withSession:session];
     }
@@ -96,6 +101,8 @@
                                                                               attachements:pushMessageContent.attachments
                                                                                      group:nil
                                                                                      state:TSMessageStateReceived];
+    
+    [sessionRecord removePendingPrekey];
     [TSMessagesDatabase storeSession:sessionRecord];
 
     return incomingMessage;
@@ -103,8 +110,9 @@
 
 + (TSWhisperMessage*)encryptMessage:(TSMessage*)message withSession:(TSSession*)sessionRecord{
     
-    if (sessionRecord.fetchedPrekey) {
+    if ([sessionRecord hasPendingPreKey] && sessionRecord.needsInitialization) {
         [self initializeSessionAsAlice:sessionRecord];
+        sessionRecord.needsInitialization = FALSE;
     }
     
     TSChainKey *chainKey = [sessionRecord senderChainKey];
@@ -112,9 +120,9 @@
     
     TSECKeyPair *senderEphemeral = [sessionRecord senderEphemeral];
 
-    NSLog(@"sender ephemeral %@",senderEphemeral.publicKey);
-    int previousCounter = sessionRecord.PN;
+    int previousCounter = [sessionRecord PN];
     
+
     
     TSPushMessageContent *messageContent = [[TSPushMessageContent alloc] initWithBody:message.content withAttachments:message.attachments withGroupContext:message.group.groupContext];
     NSData *ciphertextBody = [Cryptography encryptCTRMode:[messageContent getTextSecureProtocolData] withKeys:messageKeys];
@@ -142,8 +150,10 @@
                                                                   encryptedPushMessageContent:ciphertextBody
                                                                         forVersion:[self currentProtocolVersion]
                                                                            HMACKey:messageKeys.macKey];
-    }
 
+        
+
+    }
     [sessionRecord setSenderChainKey:[chainKey nextChainKey]];
     [TSMessagesDatabase storeSession:sessionRecord];
     return encryptedMessage;
@@ -158,13 +168,13 @@
         // Receiving chain setup
         RKCK *rootKey = [RKCK initWithRK:session.rootKey CK:nil];
         TSECKeyPair *ourEphemeral = [session senderEphemeral];
-        NSLog(@"our ephemeral public receive %@",ourEphemeral.publicKey);
+
         RKCK *receiverChain= [rootKey createChainWithEphemeral:ourEphemeral
                                      fromTheirProvideEphemeral:theirEphemeral];
         
         // Sending chain setup
         TSECKeyPair *ourNewSendingEphemeral = [TSECKeyPair keyPairGenerateWithPreKeyId:0];
-        NSLog(@"our new sending ephemeral %@",ourNewSendingEphemeral.publicKey);
+
 
         RKCK *senderChain = [receiverChain createChainWithEphemeral:ourNewSendingEphemeral fromTheirProvideEphemeral:theirEphemeral];
         [session setSenderChain:ourNewSendingEphemeral chainkey:senderChain.CK];
@@ -223,14 +233,14 @@
 + (void) initializeSessionAsAlice:(TSSession*) sessionRecord {
     // corbett refactored:
     // See slide 9 http://www.slideshare.net/ChristineCorbettMora/axolotl-protocol-an-illustrated-primer
-    int idPrekeyUsed = sessionRecord.fetchedPrekey.prekeyId;
+    int idPrekeyUsed = sessionRecord.pendingPreKey.prekeyId;
 #warning verify if previous identity key stored!
     [sessionRecord clear];
     /* A,A0,B,B0 */
     TSECKeyPair *ourIdentityKey = [self myIdentityKey]; //A
     TSECKeyPair *ourBaseKey = [TSECKeyPair keyPairGenerateWithPreKeyId:0]; // A0
-    NSData* theirIdentityKey = sessionRecord.fetchedPrekey.identityKey; // B
-    NSData *theirEphemeralKey = sessionRecord.fetchedPrekey.ephemeralKey; // B0
+    NSData* theirIdentityKey = sessionRecord.pendingPreKey.identityKey; // B
+    NSData *theirEphemeralKey = sessionRecord.pendingPreKey.ephemeralKey; // B0
     TSECKeyPair *newSendingKey = [TSECKeyPair keyPairGenerateWithPreKeyId:0]; // A1
     // Initial 3ECDH(A,A0,B,B0)
     RKCK *receivingChain = [RKCK initWithRootMasterKey:[self masterKeyAlice:ourIdentityKey
@@ -315,13 +325,13 @@
         DLog(@"Some parameters of are not defined");
     }
     
-    NSLog(@"ourIdentityPublic: %@ our ephemeral public %@ their ephemeral %@ theirPublicKey %@", ourIdentityKeyPair.publicKey, ourEphemeralKeyPair.publicKey, theirEphemeralPublicKey, theirIdentityPublicKey);
+
     
     [masterKey appendData:[ourEphemeralKeyPair generateSharedSecretFromPublicKey:theirIdentityPublicKey]];
     [masterKey appendData:[ourIdentityKeyPair  generateSharedSecretFromPublicKey:theirEphemeralPublicKey]];
     [masterKey appendData:[ourEphemeralKeyPair generateSharedSecretFromPublicKey:theirEphemeralPublicKey]];
     
-    NSLog(@"Master Key : %@", masterKey);
+
     
     return masterKey;
 }

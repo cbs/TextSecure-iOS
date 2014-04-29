@@ -73,8 +73,7 @@
                 switch (operation.response.statusCode) {
                     case 200:{
                         
-                        NSLog(@"Reponse : %@", responseObject);
-                        NSLog(@"Prekey fetched :) ");
+
                         
                         // Extracting the recipients keying material from server payload
                         
@@ -89,7 +88,8 @@
                                                         
                             // Bootstrap session with Prekey
                             TSSession *session = [[TSSession alloc] initWithContact:recipient deviceId:[[responseObject objectForKey:@"deviceId"] intValue]];
-                            session.fetchedPrekey = [[TSPrekey alloc] initWithIdentityKey:[theirIdentityKey removeVersionByte]  ephemeral:[theirEphemeralKey removeVersionByte] prekeyId:[theirPrekeyId intValue]];
+                            session.pendingPreKey = [[TSPrekey alloc] initWithIdentityKey:[theirIdentityKey removeVersionByte]  ephemeral:[theirEphemeralKey removeVersionByte] prekeyId:[theirPrekeyId intValue]];
+                            session.needsInitialization = YES;
                             
                             [[TSMessagesManager sharedManager] submitMessage:message to:message.recipientId serializedMessage:[[[TSAxolotlRatchet encryptMessage:message withSession:session] getTextSecureProtocolData] base64EncodedString] ofType:TSPreKeyWhisperMessageType];
                         }
