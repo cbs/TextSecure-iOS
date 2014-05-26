@@ -19,6 +19,7 @@
 #import "FilePath.h"
 #import "TSGroup.h"
 #import "Emoticonizer.h"
+#import "TSVerifyIdentityViewController.h"
 
 @interface TSMessageViewController ()
 
@@ -40,6 +41,15 @@
 -(void) setupThread  {
     self.title = [self.contact name];
     [self.tableView setContentOffset:CGPointMake(0, CGFLOAT_MAX)]; //scrolls to bottom
+}
+
+
+
+- (void)prepareForSegue:(UIStoryboardSegue *)segue sender:(id)sender {
+    if ([[segue identifier] isEqualToString:@"ProfileSegue"])  {
+
+        ((TSVerifyIdentityViewController*)segue.destinationViewController).contact = self.contact;
+    }
 }
 
 - (void) dismissVC {
@@ -74,9 +84,34 @@
             [self.tableView reloadData];
         });
     }];
+    
+    
+    
+    [[NSNotificationCenter defaultCenter] addObserverForName:self.contact.registeredID object:nil queue:nil usingBlock:^(NSNotification *note) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.contact = [TSMessagesDatabase contactForRegisteredID:self.contact.registeredID];
+            [self displayProfileOptionIfAvailable];
+        });
+    }];
+    if ([self respondsToSelector:@selector(edgesForExtendedLayout)]) {
+        self.edgesForExtendedLayout = UIRectEdgeNone;
+    }
+    [self displayProfileOptionIfAvailable];
 }
 
 #pragma mark - Table view data source
+
+-(void) displayProfileOptionIfAvailable {
+    if(self.contact.identityKey && !self.contact.identityKeyIsVerified) {
+        self.navigationItem.rightBarButtonItem.enabled=YES;
+        
+    }
+    else {
+        self.navigationItem.rightBarButtonItem.enabled = NO;
+    }
+
+}
+
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     return [self.messages count];
 }

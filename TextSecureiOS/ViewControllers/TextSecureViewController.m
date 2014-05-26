@@ -124,8 +124,6 @@ static NSString *kThreadImageKey = @"kThreadImageKey";
         
         threadCell.rightUtilityButtons = rightUtilityButtons;
         threadCell.delegate = self;
-        threadCell.containingTableView = tv;
-        threadCell.cellHeight = [self tableView:tv heightForRowAtIndexPath:indexPath];
     }
     
     return cell;
@@ -167,11 +165,10 @@ static NSString *kThreadImageKey = @"kThreadImageKey";
 }
 
 -(void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
-    TSConversation* conversation = [self.conversations objectAtIndex:indexPath.row];
-    TSMessageViewController *mvc = [[TSMessageViewController alloc] initWithNibName:nil bundle:nil];
-    mvc.contact = conversation.contact;
-    [self.navigationController pushViewController:mvc animated:YES];
+    
+    [self performSegueWithIdentifier:@"NewMessageOnThreadSegue" sender:self];
 }
+
 
 -(void) reloadModel:(NSNotification*)notification {
     [self.tableView reloadData];
@@ -235,13 +232,18 @@ static NSString *kThreadImageKey = @"kThreadImageKey";
 
 
 -(void) prepareForSegue:(UIStoryboardSegue *)segue sender:(id)sender {
-    if([segue.identifier isEqualToString:@"ComposeMessageSegue"]) {
-        TSMessageViewController *vc = [segue destinationViewController];
+    if([segue.identifier isEqualToString:@"NewMessageOnThreadSegue"]) {
+        TSMessageViewController *mvc = [segue destinationViewController];
         //        [vc setupWithConversation:[TSThread threadWithContacts:[(TSGroupSetupViewController*)sender whisperContacts] save:YES]];
         if([sender respondsToSelector:@selector(group)]) {
-            vc.group = [sender performSelector:@selector(group)];
+            mvc.group = [sender performSelector:@selector(group)];
         }
+        NSIndexPath *selectedIndexPath = [self.tableView indexPathForSelectedRow];
+        TSConversation* conversation = [self.conversations objectAtIndex:selectedIndexPath.row];
+        mvc.contact=conversation.contact;
     }
+
 }
+
 
 @end
